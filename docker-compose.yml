@@ -1,0 +1,113 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  zookeeper:
+    image: bitnami/zookeeper:3.8
+    container_name: zookeeper
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: bitnami/kafka:3.5
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - KAFKA_BROKER_ID=${KAFKA_BROKER_ID}
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=${KAFKA_ZOOKEEPER_CONNECT}
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    ports:
+      - "9092:9092"
+
+  redis:
+    image: redis:6-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: warehouse_api
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - KAFKA_BOOTSTRAP=${KAFKA_ADVERTISED_HOST_NAME}:${KAFKA_ADVERTISED_PORT}
+      - KAFKA_TOPIC=${KAFKA_TOPIC}
+      - KAFKA_GROUP_ID=${KAFKA_GROUP_ID}
+      - REDIS_URL=redis://redis:6379/0
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: warehouse_consumer
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - kafka
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - KAFKA_BOOTSTRAP=${KAFKA_ADVERTISED_HOST_NAME}:${KAFKA_ADVERTISED_PORT}
+      - KAFKA_TOPIC=${KAFKA_TOPIC}
+      - KAFKA_GROUP_ID=${KAFKA_GROUP_ID}
+    command: python -u -m app.consumer
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+

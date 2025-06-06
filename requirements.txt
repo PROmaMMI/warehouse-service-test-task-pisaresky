@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy>=1.4
+psycopg2-binary
+aiokafka
+pydantic
+python-dotenv
+prometheus-fastapi-instrumentator
+aioredis
+pytest
+httpx
